@@ -100,7 +100,15 @@ body {
     gap: 8px;
     min-height: 190px;
     overflow-x: auto;
-    padding-bottom: 15px;
+    padding-bottom: 4px;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.timeline-wrap::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
 }
 
 .timeline-bar-item {
@@ -417,6 +425,14 @@ h1 {
     position: relative;
     overflow-x: auto;
     overflow-y: auto;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.search-table-wrap::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
 }
 
 .search-empty {
