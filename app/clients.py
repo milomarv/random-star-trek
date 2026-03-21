@@ -8,35 +8,20 @@ from urllib.parse import quote, quote_plus
 
 import httpx
 
+from .catalog_config import (
+    CANONICAL_SERIES_QUERIES,
+    EXCLUDED_FILM_TITLES,
+    SERIES_NAME_OVERRIDES,
+    TVMAZE_EPISODES_URL,
+    TVMAZE_SEARCH_URL,
+    TVMAZE_SINGLESEARCH_URL,
+    WIKIPEDIA_CATEGORY_URL,
+    WIKIPEDIA_FILM_ROOT_CATEGORY,
+    WIKIPEDIA_SUMMARY_URL,
+    YOUTUBE_FALLBACK_SERIES,
+)
 from app.models import CatalogItem
 from app.settings import settings
-
-TVMAZE_SEARCH_URL = "https://api.tvmaze.com/search/shows?q=star%20trek"
-TVMAZE_SINGLESEARCH_URL = "https://api.tvmaze.com/singlesearch/shows?q={query}"
-TVMAZE_EPISODES_URL = "https://api.tvmaze.com/shows/{show_id}/episodes"
-WIKIPEDIA_CATEGORY_URL = "https://en.wikipedia.org/w/api.php"
-WIKIPEDIA_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
-WIKIPEDIA_FILM_ROOT_CATEGORY = "Category:Star Trek (film franchise)"
-
-CANONICAL_SERIES_QUERIES = [
-    "Star Trek: The Original Series",
-    "Star Trek: The Animated Series",
-    "Star Trek: The Next Generation",
-    "Star Trek: Deep Space Nine",
-    "Star Trek: Voyager",
-    "Star Trek: Enterprise",
-    "Star Trek: Discovery",
-    "Star Trek: Picard",
-    "Star Trek: Lower Decks",
-    "Star Trek: Prodigy",
-    "Star Trek: Strange New Worlds",
-    "Star Trek: Starfleet Academy",
-]
-
-EXCLUDED_FILM_TITLES = {
-    "star trek: the god thing",
-    "star trek: planet of the titans",
-}
 
 
 def _normalize_name(value: str) -> str:
@@ -46,6 +31,30 @@ def _normalize_name(value: str) -> str:
 def _make_prime_search_link(query: str) -> str:
     domain = settings.normalized_prime_video_domain
     return f"https://{domain}/s?k={quote_plus(query)}&i=instant-video"
+
+
+def _make_youtube_search_link(query: str) -> str:
+    return f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+
+
+def _make_streaming_link(
+    *,
+    series_name: str,
+    title: str,
+    kind: Literal["episode", "film"],
+) -> str:
+    normalized_series = _normalize_name(series_name)
+    if kind == "episode" and normalized_series in YOUTUBE_FALLBACK_SERIES:
+        return _make_youtube_search_link(f"{series_name} {title}")
+
+    if kind == "film":
+        return _make_prime_search_link(title)
+    return _make_prime_search_link(series_name)
+
+
+def _canonicalize_series_name(series_name: str) -> str:
+    normalized_series_name = _normalize_name(series_name)
+    return SERIES_NAME_OVERRIDES.get(normalized_series_name, series_name)
 
 
 def _looks_like_main_star_trek_series(show_name: str) -> bool:
@@ -146,7 +155,7 @@ async def fetch_star_trek_episodes(
     for show, episodes_response in zip(shows, episode_responses, strict=True):
         episodes_response.raise_for_status()
         episodes = episodes_response.json()
-        series_name = show.get("name", "Star Trek")
+        series_name = _canonicalize_series_name(show.get("name", "Star Trek"))
 
         for episode in episodes:
             season = episode.get("season")
@@ -160,7 +169,6 @@ async def fetch_star_trek_episodes(
                 except ValueError:
                     year = None
 
-            prime_search = series_name
             image = episode.get("image") or {}
 
             items.append(
@@ -172,7 +180,11 @@ async def fetch_star_trek_episodes(
                     episode_number=episode_number,
                     year=year,
                     banner_url=image.get("original") or image.get("medium"),
-                    prime_video_url=_make_prime_search_link(prime_search),
+                    prime_video_url=_make_streaming_link(
+                        series_name=series_name,
+                        title=episode_title,
+                        kind="episode",
+                    ),
                 )
             )
 
@@ -269,7 +281,11 @@ async def fetch_star_trek_films(client: httpx.AsyncClient) -> list[CatalogItem]:
                 year=year,
                 film_era=_classify_film_era(year),
                 banner_url=banner,
-                prime_video_url=_make_prime_search_link(title),
+                prime_video_url=_make_streaming_link(
+                    series_name="Star Trek Films",
+                    title=title,
+                    kind="film",
+                ),
             )
         )
 

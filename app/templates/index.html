@@ -113,10 +113,12 @@
                         </span>
                     </div>
                     {% for series_name in series_options %}
+                    {% if series_name != "Star Trek Films" %}
                     <label class="checkbox-row">
                         <input type="checkbox" name="exclude_series" value="{{ series_name }}">
-                        <span>{{ series_name }} <small class="count-badge">{{ filter_stats.series_counts.get(series_name, 0) }}</small></span>
+                        <span>{{ series_name }}{% set abbreviation = series_abbreviations.get(series_name|lower) %}{% if abbreviation %} ({{ abbreviation }}){% endif %} <small class="count-badge">{{ filter_stats.series_counts.get(series_name, 0) }}</small></span>
                     </label>
+                    {% endif %}
                     {% endfor %}
                 </fieldset>
 
@@ -194,6 +196,7 @@
             const searchUrl = "{{ (base_path ~ '/api/search') if base_path else '/api/search' }}";
             const releaseTimelineUrl = "{{ (base_path ~ '/api/release-timeline') if base_path else '/api/release-timeline' }}";
             const filtersUrl = "{{ (base_path ~ '/api/filters') if base_path else '/api/filters' }}";
+            const seriesAbbreviations = JSON.parse('{{ series_abbreviations | tojson | safe }}');
             const form = document.getElementById("filters");
             const resultSection = document.getElementById("result");
             const searchInput = document.getElementById("catalog-search");
@@ -211,12 +214,142 @@
             const typeCheckboxes = Array.from(
                 form.querySelectorAll('input[name="include_kinds"][type="checkbox"]')
             );
+            const filmEraCheckboxes = Array.from(
+                form.querySelectorAll('input[name="exclude_film_eras"][type="checkbox"]')
+            );
+            const starTrekFilmsSeriesCheckbox = form.querySelector(
+                'input[name="exclude_series"][type="checkbox"][value="Star Trek Films"]'
+            );
 
             const ensureAtLeastOneTypeSelected = (changedElement) => {
                 const selectedCount = typeCheckboxes.filter((checkbox) => checkbox.checked).length;
                 if (selectedCount === 0 && changedElement) {
                     changedElement.checked = true;
                 }
+            };
+
+            const ensureAtLeastOneFilmEraIncluded = (changedElement) => {
+                const filmsSelected = typeCheckboxes.some(
+                    (checkbox) => checkbox.value === "film" && checkbox.checked
+                );
+                if (!filmsSelected || !filmEraCheckboxes.length) {
+                    return;
+                }
+
+                const excludedCount = filmEraCheckboxes.filter((checkbox) => checkbox.checked).length;
+                if (excludedCount < filmEraCheckboxes.length) {
+                    return;
+                }
+
+                if (changedElement instanceof HTMLInputElement && changedElement.name === "exclude_film_eras") {
+                    changedElement.checked = false;
+                    return;
+                }
+
+                filmEraCheckboxes[filmEraCheckboxes.length - 1].checked = false;
+            };
+
+            const ensureFilmSeriesNotFullyExcluded = () => {
+                if (!starTrekFilmsSeriesCheckbox) {
+                    return;
+                }
+
+                const filmsSelected = typeCheckboxes.some(
+                    (checkbox) => checkbox.value === "film" && checkbox.checked
+                );
+                if (!filmsSelected) {
+                    return;
+                }
+
+                const episodesSelected = typeCheckboxes.some(
+                    (checkbox) => checkbox.value === "episode" && checkbox.checked
+                );
+                if (!episodesSelected && starTrekFilmsSeriesCheckbox.checked) {
+                    starTrekFilmsSeriesCheckbox.checked = false;
+                }
+            };
+
+            const formatSeriesLabel = (series) => {
+                const normalizedSeries = String(series || "").trim().toLowerCase();
+                const abbreviation = seriesAbbreviations[normalizedSeries];
+                if (!abbreviation) {
+                    return series;
+                }
+                return `${series} (${abbreviation})`;
+            };
+
+            const isMobileDevice = () =>
+                /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+
+            const isAndroidDevice = () => /Android/i.test(navigator.userAgent || "");
+
+            const isAppleMobileDevice = () => /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+
+            const buildStreamingAppUrl = (webUrl) => {
+                if (!webUrl) {
+                    return null;
+                }
+
+                try {
+                    const parsed = new URL(webUrl);
+                    const host = parsed.hostname.toLowerCase();
+
+                    if (host.includes("youtube.com") || host.includes("youtu.be")) {
+                        const videoId = parsed.searchParams.get("v");
+                        if (videoId) {
+                            return `vnd.youtube://watch?v=${encodeURIComponent(videoId)}`;
+                        }
+                        const query = parsed.searchParams.get("search_query");
+                        if (query) {
+                            return `vnd.youtube://results?search_query=${encodeURIComponent(query)}`;
+                        }
+                        return "vnd.youtube://";
+                    }
+
+                    if (
+                        host.includes("amazon.")
+                        || host.includes("primevideo.com")
+                    ) {
+                        const query = parsed.searchParams.get("k")
+                            || parsed.searchParams.get("phrase")
+                            || "star trek";
+
+                        if (isAndroidDevice()) {
+                            const intentPath = `${parsed.host}${parsed.pathname}${parsed.search}`;
+                            const encodedFallback = encodeURIComponent(webUrl);
+                            return `intent://${intentPath}#Intent;scheme=https;package=com.amazon.mShop.android.shopping;S.browser_fallback_url=${encodedFallback};end`;
+                        }
+
+                        if (isAppleMobileDevice()) {
+                            return `amazon://search?k=${encodeURIComponent(query)}`;
+                        }
+
+                        return `amazon://search?k=${encodeURIComponent(query)}`;
+                    }
+                } catch {
+                    return null;
+                }
+
+                return null;
+            };
+
+            const applyMobileStreamingLinks = (root = document) => {
+                if (!isMobileDevice()) {
+                    return;
+                }
+
+                root.querySelectorAll('a[data-app-link="streaming"]').forEach((anchor) => {
+                    const webUrl = anchor.getAttribute("data-stream-url") || anchor.href;
+                    const appUrl = buildStreamingAppUrl(webUrl);
+                    if (!appUrl) {
+                        return;
+                    }
+
+                    anchor.setAttribute("data-web-url", webUrl);
+                    anchor.setAttribute("href", appUrl);
+                    anchor.removeAttribute("target");
+                    anchor.setAttribute("rel", "noopener noreferrer");
+                });
             };
 
             const saveFilters = () => {
@@ -322,6 +455,8 @@
                 }
 
                 ensureAtLeastOneTypeSelected(typeCheckboxes[0]);
+                ensureAtLeastOneFilmEraIncluded(null);
+                ensureFilmSeriesNotFullyExcluded();
             };
 
             const renderSearchHits = (hits) => {
@@ -337,18 +472,26 @@
                 searchResults.closest(".search-table-wrap")?.classList.remove("is-empty");
 
                 searchResults.innerHTML = hits
-                    .map((hit) => `
+                    .map((hit) => {
+                        const isYoutube = typeof hit.prime_video_url === "string"
+                            && hit.prime_video_url.includes("youtube.com");
+                        const linkText = isYoutube ? "Watch on YouTube" : "Open on Prime";
+                        const linkClass = isYoutube ? "cta cta-red search-prime-link" : "cta cta-blue search-prime-link";
+                        return `
                         <tr>
                             <td>${hit.title}</td>
-                            <td>${hit.series}</td>
+                            <td>${formatSeriesLabel(hit.series)}</td>
                             <td>${hit.year ?? "-"}</td>
                             <td>${hit.season ?? "-"}</td>
                             <td>${hit.episode ?? "-"}</td>
                             <td>${hit.type === "episode" ? "Episode" : "Film"}</td>
-                            <td><a class="cta cta-blue search-prime-link" href="${hit.prime_video_url}" target="_blank" rel="noopener noreferrer">Open on Prime</a></td>
+                            <td><a class="${linkClass}" href="${hit.prime_video_url}" target="_blank" rel="noopener noreferrer" data-app-link="streaming" data-stream-url="${hit.prime_video_url}">${linkText}</a></td>
                         </tr>
-                    `)
+                    `;
+                    })
                     .join("");
+
+                applyMobileStreamingLinks(searchResults);
             };
 
             let searchTimer = null;
@@ -488,11 +631,49 @@
             // Trigger one refresh so initial content always matches restored filters.
             refreshRandom();
 
+            applyMobileStreamingLinks(document);
+
+            document.body.addEventListener("click", (event) => {
+                if (!isMobileDevice()) {
+                    return;
+                }
+
+                const anchor = event.target instanceof Element
+                    ? event.target.closest('a[data-app-link="streaming"][data-web-url]')
+                    : null;
+                if (!(anchor instanceof HTMLAnchorElement)) {
+                    return;
+                }
+
+                event.preventDefault();
+                const appUrl = anchor.getAttribute("href");
+                const webUrl = anchor.getAttribute("data-web-url");
+                if (!appUrl || !webUrl) {
+                    return;
+                }
+
+                window.location.href = appUrl;
+                window.setTimeout(() => {
+                    document.location.href = webUrl;
+                }, 900);
+            });
+
+            document.body.addEventListener("htmx:afterSwap", (event) => {
+                const target = event.target;
+                if (target instanceof Element) {
+                    applyMobileStreamingLinks(target);
+                }
+            });
+
             form.addEventListener("change", (event) => {
                 const target = event.target;
                 if (target instanceof HTMLInputElement && target.name === "include_kinds") {
                     ensureAtLeastOneTypeSelected(target);
                 }
+                if (target instanceof HTMLInputElement) {
+                    ensureAtLeastOneFilmEraIncluded(target);
+                }
+                ensureFilmSeriesNotFullyExcluded();
                 saveFilters();
                 void updatePoolBars();
                 scheduleSearch();
@@ -504,6 +685,7 @@
                 form.querySelectorAll('input[name="exclude_series"][type="checkbox"]').forEach((checkbox) => {
                     checkbox.checked = true;
                 });
+                ensureFilmSeriesNotFullyExcluded();
                 saveFilters();
                 void updatePoolBars();
                 scheduleSearch();
@@ -526,6 +708,7 @@
                 form.querySelectorAll('input[name="exclude_film_eras"][type="checkbox"]').forEach((checkbox) => {
                     checkbox.checked = true;
                 });
+                ensureAtLeastOneFilmEraIncluded(null);
                 saveFilters();
                 void updatePoolBars();
                 scheduleSearch();

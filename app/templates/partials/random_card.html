@@ -25,7 +25,7 @@
     <div class="meta">
         <p class="kind">{{ item.kind | upper }}</p>
         <h2>{{ item.title }}</h2>
-        <p><strong>Series:</strong> {{ item.series }}</p>
+        <p><strong>Series:</strong> {{ item.series }}{% set abbreviation = series_abbreviations.get(item.series|lower) %}{% if abbreviation %} ({{ abbreviation }}){% endif %}</p>
         <p><strong>Year:</strong> {{ item.year or "Unknown" }}</p>
 
         {% if item.kind == "episode" %}
@@ -45,8 +45,15 @@
             </button>
         </div>
 
-        <a href="{{ item.prime_video_url }}" target="_blank" rel="noopener noreferrer" class="cta cta-blue prime-link">
-            Open on Prime Video Search
+        <a
+            href="{{ item.prime_video_url }}"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-app-link="streaming"
+            data-stream-url="{{ item.prime_video_url }}"
+            class="cta {{ 'cta-red' if 'youtube.com' in item.prime_video_url else 'cta-blue' }} prime-link"
+        >
+            {{ "Search on YouTube" if "youtube.com" in item.prime_video_url else "Open on Prime Video Search" }}
         </a>
     </div>
 </article>

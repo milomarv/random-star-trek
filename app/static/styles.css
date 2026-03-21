@@ -511,6 +511,18 @@ h1 {
     box-shadow: 0 9px 24px rgba(76, 167, 255, 0.35);
 }
 
+.cta-red,
+.cta-red:visited,
+.cta-red:hover,
+.cta-red:active {
+    color: #fff7f7 !important;
+    background: linear-gradient(90deg, #a41414, #e12b2b) !important;
+}
+
+.cta-red:hover {
+    box-shadow: 0 9px 24px rgba(225, 43, 43, 0.4);
+}
+
 .result {
     min-height: 220px;
     min-width: 0;
@@ -537,7 +549,7 @@ h1 {
 
 .banner {
     width: 100%;
-    height: clamp(180px, 34vw, 330px);
+    height: clamp(180px, 34vw, 360px);
     min-height: 0;
     aspect-ratio: 16 / 9;
     object-fit: cover;
@@ -586,6 +598,16 @@ a.prime-link.cta-blue:focus {
     color: #111111 !important;
     -webkit-text-fill-color: #111111;
     background: linear-gradient(90deg, #1f6fe5, #4ca7ff) !important;
+}
+
+a.prime-link.cta-red,
+a.prime-link.cta-red:visited,
+a.prime-link.cta-red:hover,
+a.prime-link.cta-red:active,
+a.prime-link.cta-red:focus {
+    color: #fff7f7 !important;
+    -webkit-text-fill-color: #fff7f7;
+    background: linear-gradient(90deg, #a41414, #e12b2b) !important;
 }
 
 @keyframes card-in {

@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app.catalog_config import SERIES_ABBREVIATIONS
 from app.models import (
     FilterState,
     PoolCountsResponse,
@@ -44,6 +45,7 @@ async def index(request: Request) -> HTMLResponse:
         "request": request,
         "base_path": settings.normalized_base_path,
         "series_options": series_options,
+        "series_abbreviations": SERIES_ABBREVIATIONS,
         "filter_stats": filter_stats,
         "pool_counts": pool_counts,
         "persist_filters": settings.persist_filters,
@@ -187,6 +189,7 @@ async def random_card(
         "request": request,
         "base_path": settings.normalized_base_path,
         "item": item,
+        "series_abbreviations": SERIES_ABBREVIATIONS,
         "total": total,
         "include_kinds": include_kinds or [],
         "exclude_series": exclude_series or [],
