@@ -1,0 +1,26 @@
+services:
+  app:
+    image: random-star-trek:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: random-star-trek
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.random-star-trek.rule=PathPrefix(`${APP_BASE_PATH}`)
+      - traefik.http.routers.random-star-trek.entrypoints=websecure
+      - traefik.http.routers.random-star-trek.tls=true
+      - traefik.http.services.random-star-trek.loadbalancer.server.port=8000
+    networks:
+      - traefik-public
+
+networks:
+  traefik-public:
+    external: true

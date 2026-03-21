@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Random Star Trek Picker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ (base_path ~ '/static/styles.css') if base_path else '/static/styles.css' }}">
+    <link rel="icon" type="image/svg+xml" href="{{ (base_path ~ '/static/images/favicon.svg') if base_path else '/static/images/favicon.svg' }}">
+    <link rel="shortcut icon" href="{{ (base_path ~ '/static/images/favicon.svg') if base_path else '/static/images/favicon.svg' }}">
+    <meta name="persist-filters" content="{{ 'true' if persist_filters else 'false' }}">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+    <main class="shell">
+        <section class="hero intro-card">
+            <p class="eyebrow">Star Trek Randomizer</p>
+            <h1>Warp To A Random Episode Or Film</h1>
+            <p class="subtitle">
+                Data is fetched from live APIs and then sampled across every available Star Trek
+                episode and film result.
+            </p>
+        </section>
+
+        <section class="panel random-card-panel">
+            <div class="panel-head">
+                <h2 class="panel-title">Random Pick</h2>
+            </div>
+
+            <section
+                id="result"
+                class="result"
+                hx-get="{{ (base_path ~ '/partials/random-card') if base_path else '/partials/random-card' }}"
+                hx-trigger="load, refreshRandom"
+                hx-swap="innerHTML"
+                hx-include="#filters"
+            ></section>
+        </section>
+
+        <section class="panel filters-panel">
+            <h2 class="panel-title">Filters</h2>
+            <div class="pool-bars" id="pool-bars">
+                <div class="pool-bar-card" data-kind="total">
+                    <p class="pool-bar-title">Total</p>
+                    <p class="pool-bar-values">
+                        <strong id="pool-total-selected">{{ pool_counts.total_selected }}</strong>
+                        /
+                        <span id="pool-total-available">{{ pool_counts.total_available }}</span>
+                    </p>
+                    <div class="pool-bar-track">
+                        <span
+                            class="pool-bar-fill"
+                            id="pool-total-fill"
+                            style="width: 0%"
+                        ></span>
+                    </div>
+                </div>
+
+                <div class="pool-bar-card" data-kind="episodes">
+                    <p class="pool-bar-title">Episodes</p>
+                    <p class="pool-bar-values">
+                        <strong id="pool-episodes-selected">{{ pool_counts.episodes_selected }}</strong>
+                        /
+                        <span id="pool-episodes-available">{{ pool_counts.episodes_available }}</span>
+                    </p>
+                    <div class="pool-bar-track">
+                        <span
+                            class="pool-bar-fill"
+                            id="pool-episodes-fill"
+                            style="width: 0%"
+                        ></span>
+                    </div>
+                </div>
+
+                <div class="pool-bar-card" data-kind="films">
+                    <p class="pool-bar-title">Films</p>
+                    <p class="pool-bar-values">
+                        <strong id="pool-films-selected">{{ pool_counts.films_selected }}</strong>
+                        /
+                        <span id="pool-films-available">{{ pool_counts.films_available }}</span>
+                    </p>
+                    <div class="pool-bar-track">
+                        <span
+                            class="pool-bar-fill"
+                            id="pool-films-fill"
+                            style="width: 0%"
+                        ></span>
+                    </div>
+                </div>
+            </div>
+
+            <form id="filters" class="filters" onsubmit="return false;">
+                <div class="type-toggle-row">
+                    <input type="hidden" name="include_kinds" value="">
+                    <label class="type-toggle">
+                        <input type="checkbox" name="include_kinds" value="episode" checked>
+                        <span>Episodes <small class="count-badge">{{ filter_stats.episodes }}</small></span>
+                    </label>
+                    <label class="type-toggle">
+                        <input type="checkbox" name="include_kinds" value="film" checked>
+                        <span>Films <small class="count-badge">{{ filter_stats.films }}</small></span>
+                    </label>
+                </div>
+
+                <fieldset class="checkbox-group">
+                    <div class="exclude-controls-card">
+                        <p class="exclude-title">Exclude Series</p>
+                        <span class="legend-actions">
+                            <button type="button" class="mini-btn" id="exclude-series-all">Select All</button>
+                            <button type="button" class="mini-btn" id="exclude-series-none">Clear All</button>
+                        </span>
+                    </div>
+                    {% for series_name in series_options %}
+                    <label class="checkbox-row">
+                        <input type="checkbox" name="exclude_series" value="{{ series_name }}">
+                        <span>{{ series_name }} <small class="count-badge">{{ filter_stats.series_counts.get(series_name, 0) }}</small></span>
+                    </label>
+                    {% endfor %}
+                </fieldset>
+
+                <fieldset class="checkbox-group">
+                    <div class="exclude-controls-card">
+                        <p class="exclude-title">Exclude Film Era</p>
+                        <span class="legend-actions">
+                            <button type="button" class="mini-btn" id="exclude-film-eras-all">Select All</button>
+                            <button type="button" class="mini-btn" id="exclude-film-eras-none">Clear All</button>
+                        </span>
+                    </div>
+                    <label class="checkbox-row">
+                        <input type="checkbox" name="exclude_film_eras" value="tos">
+                        <span>TOS films (1979-1991) <small class="count-badge">{{ filter_stats.film_era_counts.get('tos', 0) }}</small></span>
+                    </label>
+                    <label class="checkbox-row">
+                        <input type="checkbox" name="exclude_film_eras" value="tng">
+                        <span>TNG films (1994-2002) <small class="count-badge">{{ filter_stats.film_era_counts.get('tng', 0) }}</small></span>
+                    </label>
+                    <label class="checkbox-row">
+                        <input type="checkbox" name="exclude_film_eras" value="kelvin">
+                        <span>Kelvin films (2009-2016) <small class="count-badge">{{ filter_stats.film_era_counts.get('kelvin', 0) }}</small></span>
+                    </label>
+                    <label class="checkbox-row">
+                        <input type="checkbox" name="exclude_film_eras" value="other">
+                        <span>Other/unknown era films <small class="count-badge">{{ filter_stats.film_era_counts.get('other', 0) }}</small></span>
+                    </label>
+                </fieldset>
+            </form>
+        </section>
+
+        <section class="panel search-panel" aria-label="Search episode or film">
+            <h2 class="panel-title">Search</h2>
+            <section class="search-box">
+                <label for="catalog-search" class="search-label">Search Film Or Episode</label>
+                <input
+                    id="catalog-search"
+                    type="search"
+                    class="search-input"
+                    placeholder="Type title or series, e.g. voyager or first contact"
+                >
+                <div class="search-results-meta" id="search-meta"></div>
+                <div class="search-table-wrap">
+                    <table class="search-table">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Series</th>
+                                <th>Year</th>
+                                <th>Season</th>
+                                <th>Episode</th>
+                                <th>Type</th>
+                                <th>Prime</th>
+                            </tr>
+                        </thead>
+                        <tbody id="search-results"></tbody>
+                    </table>
+                    <p class="search-empty" id="search-empty">No hits</p>
+                </div>
+            </section>
+        </section>
+
+        <section class="panel timeline-panel" aria-label="Release timeline histogram">
+            <h2 class="panel-title">Release Timeline</h2>
+            <p class="timeline-subtitle" id="timeline-meta">Loading timeline...</p>
+            <div class="timeline-wrap" id="timeline-wrap"></div>
+        </section>
+    </main>
+
+    <script>
+        (async () => {
+            const storageKey = "random-star-trek-filters-v1";
+            const persistFilters = document.querySelector('meta[name="persist-filters"]')?.content === 'true';
+            const poolStatsUrl = "{{ (base_path ~ '/api/pool-stats') if base_path else '/api/pool-stats' }}";
+            const searchUrl = "{{ (base_path ~ '/api/search') if base_path else '/api/search' }}";
+            const releaseTimelineUrl = "{{ (base_path ~ '/api/release-timeline') if base_path else '/api/release-timeline' }}";
+            const filtersUrl = "{{ (base_path ~ '/api/filters') if base_path else '/api/filters' }}";
+            const form = document.getElementById("filters");
+            const resultSection = document.getElementById("result");
+            const searchInput = document.getElementById("catalog-search");
+            const searchResults = document.getElementById("search-results");
+            const searchMeta = document.getElementById("search-meta");
+            const searchEmpty = document.getElementById("search-empty");
+            const timelineWrap = document.getElementById("timeline-wrap");
+            const timelineMeta = document.getElementById("timeline-meta");
+            const excludeSeriesAllButton = document.getElementById("exclude-series-all");
+            const excludeSeriesNoneButton = document.getElementById("exclude-series-none");
+            const excludeFilmErasAllButton = document.getElementById("exclude-film-eras-all");
+            const excludeFilmErasNoneButton = document.getElementById("exclude-film-eras-none");
+            let timelineRequestSeq = 0;
+
+            const typeCheckboxes = Array.from(
+                form.querySelectorAll('input[name="include_kinds"][type="checkbox"]')
+            );
+
+            const ensureAtLeastOneTypeSelected = (changedElement) => {
+                const selectedCount = typeCheckboxes.filter((checkbox) => checkbox.checked).length;
+                if (selectedCount === 0 && changedElement) {
+                    changedElement.checked = true;
+                }
+            };
+
+            const saveFilters = () => {
+                const data = {};
+                const seenCheckboxNames = new Set();
+
+                for (const element of form.elements) {
+                    if (!element.name) {
+                        continue;
+                    }
+
+                    if (element.type === "checkbox") {
+                        if (!seenCheckboxNames.has(element.name)) {
+                            data[element.name] = [];
+                            seenCheckboxNames.add(element.name);
+                        }
+                        if (element.checked) {
+                            data[element.name].push(element.value);
+                        }
+                    }
+                }
+
+                if (persistFilters) {
+                    fetch(filtersUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(data),
+                    });
+                    return;
+                }
+
+                localStorage.setItem(storageKey, JSON.stringify(data));
+            };
+
+            const updatePoolBars = async () => {
+                const params = new URLSearchParams(new FormData(form));
+                const response = await fetch(`${poolStatsUrl}?${params.toString()}`);
+                if (!response.ok) {
+                    return;
+                }
+                const stats = await response.json();
+
+                const updateBar = (name) => {
+                    const selected = stats[`${name}_selected`] ?? 0;
+                    const available = stats[`${name}_available`] ?? 0;
+                    const selectedNode = document.getElementById(`pool-${name}-selected`);
+                    const availableNode = document.getElementById(`pool-${name}-available`);
+                    const fillNode = document.getElementById(`pool-${name}-fill`);
+                    if (!selectedNode || !availableNode || !fillNode) {
+                        return;
+                    }
+                    selectedNode.textContent = String(selected);
+                    availableNode.textContent = String(available);
+                    const percentage = available > 0 ? (selected * 100) / available : 0;
+                    fillNode.style.width = `${percentage}%`;
+                };
+
+                updateBar("total");
+                updateBar("episodes");
+                updateBar("films");
+            };
+
+            const restoreFilters = async () => {
+                let data;
+
+                if (persistFilters) {
+                    try {
+                        const response = await fetch(filtersUrl);
+                        if (response.ok) {
+                            data = await response.json();
+                        }
+                    } catch {
+                        // ignore, fall through to defaults
+                    }
+                } else {
+                    const raw = localStorage.getItem(storageKey);
+                    if (raw) {
+                        try {
+                            data = JSON.parse(raw);
+                        } catch {
+                            // ignore
+                        }
+                    }
+                }
+
+                if (!data) {
+                    typeCheckboxes.forEach((checkbox) => {
+                        checkbox.checked = true;
+                    });
+                    ensureAtLeastOneTypeSelected(typeCheckboxes[0]);
+                    return;
+                }
+
+                for (const element of form.elements) {
+                    if (!element.name || element.type !== "checkbox") {
+                        continue;
+                    }
+
+                    const selectedValues = Array.isArray(data[element.name])
+                        ? data[element.name]
+                        : [];
+                    element.checked = selectedValues.includes(element.value);
+                }
+
+                ensureAtLeastOneTypeSelected(typeCheckboxes[0]);
+            };
+
+            const renderSearchHits = (hits) => {
+                if (!hits.length) {
+                    searchResults.innerHTML = "";
+                    searchResults.closest(".search-table-wrap")?.classList.add("is-empty");
+                    if (searchEmpty) {
+                        searchEmpty.textContent = "No hits";
+                    }
+                    return;
+                }
+
+                searchResults.closest(".search-table-wrap")?.classList.remove("is-empty");
+
+                searchResults.innerHTML = hits
+                    .map((hit) => `
+                        <tr>
+                            <td>${hit.title}</td>
+                            <td>${hit.series}</td>
+                            <td>${hit.year ?? "-"}</td>
+                            <td>${hit.season ?? "-"}</td>
+                            <td>${hit.episode ?? "-"}</td>
+                            <td>${hit.type === "episode" ? "Episode" : "Film"}</td>
+                            <td><a class="cta cta-blue search-prime-link" href="${hit.prime_video_url}" target="_blank" rel="noopener noreferrer">Open on Prime</a></td>
+                        </tr>
+                    `)
+                    .join("");
+            };
+
+            let searchTimer = null;
+            const runSearch = async () => {
+                const q = searchInput.value.trim();
+                const params = new URLSearchParams(new FormData(form));
+                params.set("q", q);
+                const response = await fetch(`${searchUrl}?${params.toString()}`);
+                if (!response.ok) {
+                    searchMeta.textContent = "Search failed";
+                    return;
+                }
+                const payload = await response.json();
+                searchMeta.textContent = `Top ${payload.hits.length} of ${payload.total_hits} hits`;
+                renderSearchHits(payload.hits);
+            };
+
+            const runTimeline = async () => {
+                const requestSeq = ++timelineRequestSeq;
+                const params = new URLSearchParams(new FormData(form));
+                const response = await fetch(`${releaseTimelineUrl}?${params.toString()}`);
+                if (requestSeq !== timelineRequestSeq) {
+                    return;
+                }
+                if (!response.ok) {
+                    timelineMeta.textContent = "Timeline unavailable";
+                    timelineWrap.innerHTML = "";
+                    timelineWrap.classList.remove("tight-labels");
+                    return;
+                }
+
+                const payload = await response.json();
+                if (requestSeq !== timelineRequestSeq) {
+                    return;
+                }
+                if (!payload.buckets.length) {
+                    timelineMeta.textContent = "No release-year data for current selection";
+                    timelineWrap.classList.add("is-empty");
+                    timelineWrap.innerHTML = "<p class='timeline-empty'>No bars to show yet.</p>";
+                    timelineWrap.classList.remove("tight-labels");
+                    return;
+                }
+
+                timelineMeta.textContent = `${payload.total_with_year} with known year, ${payload.total_without_year} unknown`;
+                timelineWrap.classList.remove("is-empty");
+
+                const maxCount = Math.max(...payload.buckets.map((bucket) => bucket.count), 1);
+                timelineWrap.innerHTML = payload.buckets
+                    .map((bucket) => {
+                        const height = Math.max(8, Math.round((bucket.count / maxCount) * 150));
+                        return `
+                            <div class="timeline-bar-item" title="${bucket.year}: ${bucket.count}">
+                                <span class="timeline-bar-count">${bucket.count}</span>
+                                <span class="timeline-bar" style="height:${height}px"></span>
+                                <span class="timeline-year">${bucket.year}</span>
+                            </div>
+                        `;
+                    })
+                    .join("");
+
+                updateTimelineBarSizing();
+            };
+
+            const scheduleSearch = () => {
+                if (searchTimer) {
+                    clearTimeout(searchTimer);
+                }
+                searchTimer = setTimeout(() => {
+                    void runSearch();
+                }, 220);
+            };
+
+            const refreshRandom = () => {
+                htmx.trigger(resultSection, "refreshRandom");
+            };
+
+            const updateTimelineBarSizing = () => {
+                const bars = timelineWrap.querySelectorAll(".timeline-bar-item");
+                if (!bars.length) {
+                    return;
+                }
+
+                const minBarWidth = 12;
+                const maxBarWidth = 75;
+                const gap = 8;
+                const availableWidth = timelineWrap.clientWidth;
+                const computed = Math.floor((availableWidth - gap * (bars.length - 1)) / bars.length);
+                const barWidth = Math.max(minBarWidth, Math.min(maxBarWidth, computed));
+                timelineWrap.style.setProperty("--timeline-bar-width", `${barWidth}px`);
+                timelineWrap.classList.toggle("tight-labels", barWidth <= 18);
+            };
+
+            const getCheckedValues = (name) =>
+                Array.from(form.querySelectorAll(`input[name="${name}"][type="checkbox"]:checked`)).map(
+                    (checkbox) => checkbox.value
+                );
+
+            const refreshRandomIfCurrentPickExcluded = () => {
+                const noMatchesCard = resultSection.querySelector('[data-no-matches="true"]');
+                if (noMatchesCard) {
+                    refreshRandom();
+                    return;
+                }
+
+                const currentCard = resultSection.querySelector("[data-item-kind]");
+                if (!currentCard) {
+                    return;
+                }
+
+                const kind = currentCard.getAttribute("data-item-kind") || "";
+                const series = currentCard.getAttribute("data-item-series") || "";
+                const filmEra = currentCard.getAttribute("data-item-film-era") || "";
+
+                const includedKinds = new Set(getCheckedValues("include_kinds"));
+                if (!includedKinds.has(kind)) {
+                    refreshRandom();
+                    return;
+                }
+
+                const excludedSeries = new Set(getCheckedValues("exclude_series"));
+                if (excludedSeries.has(series)) {
+                    refreshRandom();
+                    return;
+                }
+
+                if (kind === "film" && filmEra) {
+                    const excludedFilmEras = new Set(getCheckedValues("exclude_film_eras"));
+                    if (excludedFilmEras.has(filmEra)) {
+                        refreshRandom();
+                    }
+                }
+            };
+
+            await restoreFilters();
+
+            // The card may have been loaded by HTMX before persisted filters were restored.
+            // Trigger one refresh so initial content always matches restored filters.
+            refreshRandom();
+
+            form.addEventListener("change", (event) => {
+                const target = event.target;
+                if (target instanceof HTMLInputElement && target.name === "include_kinds") {
+                    ensureAtLeastOneTypeSelected(target);
+                }
+                saveFilters();
+                void updatePoolBars();
+                scheduleSearch();
+                void runTimeline();
+                refreshRandomIfCurrentPickExcluded();
+            });
+
+            excludeSeriesAllButton.addEventListener("click", () => {
+                form.querySelectorAll('input[name="exclude_series"][type="checkbox"]').forEach((checkbox) => {
+                    checkbox.checked = true;
+                });
+                saveFilters();
+                void updatePoolBars();
+                scheduleSearch();
+                void runTimeline();
+                refreshRandomIfCurrentPickExcluded();
+            });
+
+            excludeSeriesNoneButton.addEventListener("click", () => {
+                form.querySelectorAll('input[name="exclude_series"][type="checkbox"]').forEach((checkbox) => {
+                    checkbox.checked = false;
+                });
+                saveFilters();
+                void updatePoolBars();
+                scheduleSearch();
+                void runTimeline();
+                refreshRandomIfCurrentPickExcluded();
+            });
+
+            excludeFilmErasAllButton.addEventListener("click", () => {
+                form.querySelectorAll('input[name="exclude_film_eras"][type="checkbox"]').forEach((checkbox) => {
+                    checkbox.checked = true;
+                });
+                saveFilters();
+                void updatePoolBars();
+                scheduleSearch();
+                void runTimeline();
+                refreshRandomIfCurrentPickExcluded();
+            });
+
+            excludeFilmErasNoneButton.addEventListener("click", () => {
+                form.querySelectorAll('input[name="exclude_film_eras"][type="checkbox"]').forEach((checkbox) => {
+                    checkbox.checked = false;
+                });
+                saveFilters();
+                void updatePoolBars();
+                scheduleSearch();
+                void runTimeline();
+                refreshRandomIfCurrentPickExcluded();
+            });
+
+            searchInput.addEventListener("input", scheduleSearch);
+            window.addEventListener("resize", updateTimelineBarSizing);
+
+            void updatePoolBars();
+            void runSearch();
+            void runTimeline();
+        })();
+    </script>
+</body>
+</html>

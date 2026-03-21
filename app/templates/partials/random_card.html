@@ -1,0 +1,52 @@
+<article
+    class="card"
+    data-item-kind="{{ item.kind }}"
+    data-item-series="{{ item.series }}"
+    data-item-film-era="{{ item.film_era or '' }}"
+>
+    {% if item.banner_url %}
+    <img
+        src="{{ item.banner_url }}"
+        alt="Banner for {{ item.title }}"
+        class="banner"
+        loading="lazy"
+        data-placeholder="{{ (base_path ~ '/static/images/star-trek-placeholder.svg') if base_path else '/static/images/star-trek-placeholder.svg' }}"
+        onerror="this.onerror=null;this.src=this.dataset.placeholder;"
+    >
+    {% else %}
+    <img
+        src="{{ (base_path ~ '/static/images/star-trek-placeholder.svg') if base_path else '/static/images/star-trek-placeholder.svg' }}"
+        alt="Star Trek placeholder banner"
+        class="banner"
+        loading="lazy"
+    >
+    {% endif %}
+
+    <div class="meta">
+        <p class="kind">{{ item.kind | upper }}</p>
+        <h2>{{ item.title }}</h2>
+        <p><strong>Series:</strong> {{ item.series }}</p>
+        <p><strong>Year:</strong> {{ item.year or "Unknown" }}</p>
+
+        {% if item.kind == "episode" %}
+        <p><strong>Staffel:</strong> {{ item.season }}</p>
+        <p><strong>Episode:</strong> {{ item.episode_number }}</p>
+        {% endif %}
+
+        <div class="card-actions">
+            <button
+                class="cta"
+                hx-get="{{ (base_path ~ '/partials/random-card') if base_path else '/partials/random-card' }}"
+                hx-target="#result"
+                hx-swap="innerHTML"
+                hx-include="#filters"
+            >
+                Load Another Random Pick
+            </button>
+        </div>
+
+        <a href="{{ item.prime_video_url }}" target="_blank" rel="noopener noreferrer" class="cta cta-blue prime-link">
+            Open on Prime Video Search
+        </a>
+    </div>
+</article>

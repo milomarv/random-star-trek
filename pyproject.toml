@@ -1,0 +1,23 @@
+[project]
+name = "random-star-trek"
+version = "0.1.0"
+description = "Random Star Trek episode or film picker"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+	"fastapi>=0.116.1",
+	"httpx>=0.28.1",
+	"jinja2>=3.1.6",
+	"pydantic-settings>=2.10.1",
+	"uvicorn[standard]>=0.35.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
