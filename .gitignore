@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local runtime state
+data/filters_state.json
+
+
