@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Local environment files
+.env
+
 # Local runtime state
 data/filters_state.json
 
