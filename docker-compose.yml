@@ -5,6 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: random-star-trek
+    mem_limit: 128m
+    mem_reservation: 64m
     ports:
       - "8000:8000"
     env_file:
