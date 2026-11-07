@@ -25,6 +25,10 @@ from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
+UPSTREAM_CONCURRENCY = 4
+RETRY_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 0.5
+
 
 def _normalize_name(value: str) -> str:
     return value.strip().lower()
@@ -73,8 +77,41 @@ def _classify_film_era(
     return "other"
 
 
-async def _fetch_show_by_query(client: httpx.AsyncClient, query: str) -> dict | None:
-    response = await client.get(TVMAZE_SINGLESEARCH_URL.format(query=quote_plus(query)))
+async def _get_with_retry(
+    client: httpx.AsyncClient,
+    limiter: asyncio.Semaphore,
+    url: str,
+    **kwargs,
+) -> httpx.Response:
+    for attempt in range(RETRY_ATTEMPTS - 1):
+        try:
+            async with limiter:
+                response = await client.get(url, **kwargs)
+        except httpx.TransportError as exc:
+            logger.warning("Transient error for %s (attempt %d): %s", url, attempt + 1, exc)
+        else:
+            if response.status_code != 429 and response.status_code < 500:
+                return response
+            logger.warning(
+                "Upstream returned %d for %s (attempt %d)",
+                response.status_code,
+                url,
+                attempt + 1,
+            )
+        await asyncio.sleep(RETRY_BACKOFF_SECONDS * 2**attempt)
+
+    async with limiter:
+        return await client.get(url, **kwargs)
+
+
+async def _fetch_show_by_query(
+    client: httpx.AsyncClient, limiter: asyncio.Semaphore, query: str
+) -> dict | None:
+    response = await _get_with_retry(
+        client,
+        limiter,
+        TVMAZE_SINGLESEARCH_URL.format(query=quote_plus(query)),
+    )
     if response.status_code == 404:
         return None
     response.raise_for_status()
@@ -84,10 +121,14 @@ async def _fetch_show_by_query(client: httpx.AsyncClient, query: str) -> dict | 
 async def fetch_star_trek_episodes(
     client: httpx.AsyncClient,
 ) -> list[CatalogItem]:
+    limiter = asyncio.Semaphore(UPSTREAM_CONCURRENCY)
     canonical_tasks = [
-        _fetch_show_by_query(client, query) for query in CANONICAL_SERIES_QUERIES
+        _fetch_show_by_query(client, limiter, query)
+        for query in CANONICAL_SERIES_QUERIES
     ]
-    fan_tasks = [_fetch_show_by_query(client, query) for query in FAN_SERIES_QUERIES]
+    fan_tasks = [
+        _fetch_show_by_query(client, limiter, query) for query in FAN_SERIES_QUERIES
+    ]
     canonical_results, fan_results = await asyncio.gather(
         asyncio.gather(*canonical_tasks), asyncio.gather(*fan_tasks)
     )
@@ -107,7 +148,8 @@ async def fetch_star_trek_episodes(
         shows.append(show)
 
     tasks = [
-        client.get(TVMAZE_EPISODES_URL.format(show_id=show["id"])) for show in shows
+        _get_with_retry(client, limiter, TVMAZE_EPISODES_URL.format(show_id=show["id"]))
+        for show in shows
     ]
     episode_responses = await asyncio.gather(*tasks)
 
@@ -163,9 +205,12 @@ async def fetch_star_trek_films(client: httpx.AsyncClient) -> list[CatalogItem]:
 
     headers = {"Authorization": f"Bearer {settings.tmdb_api_token.strip()}"}
     params = {"language": settings.tmdb_language}
+    limiter = asyncio.Semaphore(UPSTREAM_CONCURRENCY)
 
     async def fetch_collection(collection_id: int) -> list[dict]:
-        response = await client.get(
+        response = await _get_with_retry(
+            client,
+            limiter,
             f"{TMDB_API_BASE}/collection/{collection_id}",
             headers=headers,
             params=params,
@@ -174,7 +219,9 @@ async def fetch_star_trek_films(client: httpx.AsyncClient) -> list[CatalogItem]:
         return response.json().get("parts", [])
 
     async def fetch_extra(query: str) -> dict | None:
-        response = await client.get(
+        response = await _get_with_retry(
+            client,
+            limiter,
             f"{TMDB_API_BASE}/search/movie",
             headers=headers,
             params={**params, "query": query, "include_adult": "false"},
