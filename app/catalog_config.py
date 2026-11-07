@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-TVMAZE_SEARCH_URL = "https://api.tvmaze.com/search/shows?q=star%20trek"
 TVMAZE_SINGLESEARCH_URL = "https://api.tvmaze.com/singlesearch/shows?q={query}"
 TVMAZE_EPISODES_URL = "https://api.tvmaze.com/shows/{show_id}/episodes"
-WIKIPEDIA_CATEGORY_URL = "https://en.wikipedia.org/w/api.php"
-WIKIPEDIA_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
-WIKIPEDIA_FILM_ROOT_CATEGORY = "Category:Star Trek (film franchise)"
+TMDB_API_BASE = "https://api.themoviedb.org/3"
+TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w1280"
+TMDB_FILM_COLLECTION_IDS: tuple[int, ...] = (151, 115570, 115575)
+TMDB_EXTRA_FILM_QUERIES: tuple[str, ...] = ("Star Trek: Section 31",)
 
 CANONICAL_SERIES_QUERIES: tuple[str, ...] = (
     "Star Trek: The Original Series",
@@ -16,6 +16,7 @@ CANONICAL_SERIES_QUERIES: tuple[str, ...] = (
     "Star Trek: Enterprise",
     "Star Trek: Discovery",
     "Star Trek: Short Treks",
+    "Star Trek: very Short Treks",
     "Star Trek: Picard",
     "Star Trek: Lower Decks",
     "Star Trek: Prodigy",
@@ -23,10 +24,12 @@ CANONICAL_SERIES_QUERIES: tuple[str, ...] = (
     "Star Trek: Starfleet Academy",
 )
 
-EXCLUDED_FILM_TITLES: set[str] = {
-    "star trek: the god thing",
-    "star trek: planet of the titans",
-}
+FAN_SERIES_QUERIES: tuple[str, ...] = (
+    "Star Trek Continues",
+    "Star Trek: Odyssey",
+    "Star Trek: Scouts",
+    "Star Trek: Renegades",
+)
 
 YOUTUBE_FALLBACK_SERIES: set[str] = {
     "star trek continues",
@@ -51,6 +54,7 @@ SERIES_ABBREVIATIONS: dict[str, str] = {
     "star trek: enterprise": "ENT",
     "star trek: discovery": "DIS",
     "star trek: short treks": "ST",
+    "star trek: very short treks": "vST",
     "star trek: picard": "PIC",
     "star trek: lower decks": "LD",
     "star trek: prodigy": "PRO",

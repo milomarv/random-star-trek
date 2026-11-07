@@ -3,7 +3,7 @@
 FastAPI app that returns a random pick from all available Star Trek episodes and films.
 
 - Episodes are pulled from TVMaze.
-- Films are pulled from Wikipedia APIs (category + page summaries).
+- Films are pulled from TMDB collections and search.
 - Prime Video links are generated as direct Prime search URLs.
 
 The frontend uses HTMX + server-side templates, so it stays lightweight.
@@ -29,6 +29,8 @@ Edit `.env` and adjust values:
 - `CACHE_TTL_SECONDS`: cache time before pulling fresh upstream data.
 - `USER_AGENT`: User-Agent header sent to upstream APIs.
 - `PERSIST_FILTERS`: Enables server-side filter persistence (`true` or `false`).
+- `TMDB_API_TOKEN`: TMDB API Read Access Token; required to load films.
+- `TMDB_LANGUAGE`: language for TMDB movie titles and metadata (defaults to `en-US`).
 
 If `PERSIST_FILTERS=true`, filter state is written to `data/filters_state.json`.
 
@@ -83,7 +85,7 @@ https://homenet.tale-alioth.ts.net/random-star-trek
 
 ## Notes
 
-- Catalog data is fetched from TVMaze and Wikipedia and cached in memory for `CACHE_TTL_SECONDS`.
+- Episode catalog data is fetched from TVMaze and film data from TMDB, then cached in memory for `CACHE_TTL_SECONDS`.
+- This product uses the TMDB API but is not endorsed or certified by TMDB.
 - Prime links are generated as search URLs; for some fan-series episodes, a YouTube search link is used as fallback.
 - Docker Compose mounts `./data` into `/app/data` so persisted filter state survives container restarts.
-

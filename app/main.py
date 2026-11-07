@@ -81,12 +81,16 @@ async def pool_stats(
     exclude_film_eras: list[str] | None = Query(
         default=None, alias="exclude_film_eras"
     ),
+    include_unaired: bool = Query(default=False),
+    exclude_non_canon: bool = Query(default=False),
 ) -> PoolCountsResponse:
     return PoolCountsResponse(
         **await catalog_service.get_pool_counts(
             include_kinds=include_kinds,
             exclude_series=exclude_series,
             exclude_film_eras=exclude_film_eras,
+            include_unaired=include_unaired,
+            exclude_non_canon=exclude_non_canon,
         )
     )
 
@@ -98,12 +102,16 @@ async def random_pick(
     exclude_film_eras: list[str] | None = Query(
         default=None, alias="exclude_film_eras"
     ),
+    include_unaired: bool = Query(default=False),
+    exclude_non_canon: bool = Query(default=False),
 ) -> RandomPickResponse:
     try:
         item, total = await catalog_service.get_random_item(
             include_kinds=include_kinds,
             exclude_series=exclude_series,
             exclude_film_eras=exclude_film_eras,
+            include_unaired=include_unaired,
+            exclude_non_canon=exclude_non_canon,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -118,12 +126,16 @@ async def search_items(
     exclude_film_eras: list[str] | None = Query(
         default=None, alias="exclude_film_eras"
     ),
+    include_unaired: bool = Query(default=False),
+    exclude_non_canon: bool = Query(default=False),
 ) -> SearchResponse:
     hits, total_hits = await catalog_service.search_catalog(
         query=q,
         include_kinds=include_kinds,
         exclude_series=exclude_series,
         exclude_film_eras=exclude_film_eras,
+        include_unaired=include_unaired,
+        exclude_non_canon=exclude_non_canon,
         limit=100,
     )
     return SearchResponse(
@@ -151,11 +163,15 @@ async def release_timeline(
     exclude_film_eras: list[str] | None = Query(
         default=None, alias="exclude_film_eras"
     ),
+    include_unaired: bool = Query(default=False),
+    exclude_non_canon: bool = Query(default=False),
 ) -> ReleaseTimelineResponse:
     payload = await catalog_service.get_release_timeline(
         include_kinds=include_kinds,
         exclude_series=exclude_series,
         exclude_film_eras=exclude_film_eras,
+        include_unaired=include_unaired,
+        exclude_non_canon=exclude_non_canon,
     )
     return ReleaseTimelineResponse.model_validate(payload)
 
@@ -168,12 +184,16 @@ async def random_card(
     exclude_film_eras: list[str] | None = Query(
         default=None, alias="exclude_film_eras"
     ),
+    include_unaired: bool = Query(default=False),
+    exclude_non_canon: bool = Query(default=False),
 ) -> HTMLResponse:
     try:
         item, total = await catalog_service.get_random_item(
             include_kinds=include_kinds,
             exclude_series=exclude_series,
             exclude_film_eras=exclude_film_eras,
+            include_unaired=include_unaired,
+            exclude_non_canon=exclude_non_canon,
         )
     except ValueError:
         context = {
@@ -182,6 +202,8 @@ async def random_card(
             "include_kinds": include_kinds or [],
             "exclude_series": exclude_series or [],
             "exclude_film_eras": exclude_film_eras or [],
+            "include_unaired": include_unaired,
+            "exclude_non_canon": exclude_non_canon,
         }
         return templates.TemplateResponse(request, "partials/no_result.html", context)
 
@@ -194,5 +216,7 @@ async def random_card(
         "include_kinds": include_kinds or [],
         "exclude_series": exclude_series or [],
         "exclude_film_eras": exclude_film_eras or [],
+        "include_unaired": include_unaired,
+        "exclude_non_canon": exclude_non_canon,
     }
     return templates.TemplateResponse(request, "partials/random_card.html", context)

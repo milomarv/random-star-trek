@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel
@@ -12,6 +13,8 @@ class CatalogItem(BaseModel):
     season: int | None = None
     episode_number: int | None = None
     year: int | None = None
+    air_date: date | None = None
+    canon: bool = True
     film_era: Literal["tos", "tng", "kelvin", "other"] | None = None
     banner_url: str | None = None
     prime_video_url: str
@@ -51,6 +54,8 @@ class FilterState(BaseModel):
     include_kinds: list[str] = ["episode", "film"]
     exclude_series: list[str] = []
     exclude_film_eras: list[str] = []
+    include_unaired: list[str] = []
+    exclude_non_canon: list[str] = []
 
 
 class YearBucketResponse(BaseModel):

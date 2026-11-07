@@ -104,6 +104,17 @@
                     </label>
                 </div>
 
+                <div class="type-toggle-row">
+                    <label class="type-toggle">
+                        <input type="checkbox" name="exclude_non_canon" value="true">
+                        <span>Official canon only <small class="count-badge">{{ filter_stats.non_canon }} fan-made</small></span>
+                    </label>
+                    <label class="type-toggle">
+                        <input type="checkbox" name="include_unaired" value="true">
+                        <span>Include unreleased <small class="count-badge">{{ filter_stats.unaired }} unreleased</small></span>
+                    </label>
+                </div>
+
                 <fieldset class="checkbox-group">
                     <div class="exclude-controls-card">
                         <p class="exclude-title">Exclude Series</p>
@@ -187,6 +198,9 @@
             <div class="timeline-wrap" id="timeline-wrap"></div>
         </section>
     </main>
+    <footer class="shell">
+        <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+    </footer>
 
     <script>
         (async () => {
@@ -604,9 +618,23 @@
                 const kind = currentCard.getAttribute("data-item-kind") || "";
                 const series = currentCard.getAttribute("data-item-series") || "";
                 const filmEra = currentCard.getAttribute("data-item-film-era") || "";
+                const isCanon = currentCard.getAttribute("data-item-canon") !== "false";
+                const airDate = currentCard.getAttribute("data-item-air-date") || "";
 
                 const includedKinds = new Set(getCheckedValues("include_kinds"));
                 if (!includedKinds.has(kind)) {
+                    refreshRandom();
+                    return;
+                }
+
+                const excludeNonCanon = getCheckedValues("exclude_non_canon").length > 0;
+                if (excludeNonCanon && !isCanon) {
+                    refreshRandom();
+                    return;
+                }
+
+                const includeUnaired = getCheckedValues("include_unaired").length > 0;
+                if (!includeUnaired && airDate && new Date(airDate) > new Date()) {
                     refreshRandom();
                     return;
                 }

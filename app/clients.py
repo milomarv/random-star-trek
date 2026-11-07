@@ -1,27 +1,29 @@
 from __future__ import annotations
 
 import asyncio
-import re
-from datetime import datetime
+import logging
+from datetime import date, datetime
 from typing import Literal
-from urllib.parse import quote, quote_plus
+from urllib.parse import quote_plus
 
 import httpx
 
 from .catalog_config import (
     CANONICAL_SERIES_QUERIES,
-    EXCLUDED_FILM_TITLES,
+    FAN_SERIES_QUERIES,
     SERIES_NAME_OVERRIDES,
+    TMDB_API_BASE,
+    TMDB_EXTRA_FILM_QUERIES,
+    TMDB_FILM_COLLECTION_IDS,
+    TMDB_IMAGE_BASE,
     TVMAZE_EPISODES_URL,
-    TVMAZE_SEARCH_URL,
     TVMAZE_SINGLESEARCH_URL,
-    WIKIPEDIA_CATEGORY_URL,
-    WIKIPEDIA_FILM_ROOT_CATEGORY,
-    WIKIPEDIA_SUMMARY_URL,
     YOUTUBE_FALLBACK_SERIES,
 )
 from app.models import CatalogItem
 from app.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_name(value: str) -> str:
@@ -57,11 +59,6 @@ def _canonicalize_series_name(series_name: str) -> str:
     return SERIES_NAME_OVERRIDES.get(normalized_series_name, series_name)
 
 
-def _looks_like_main_star_trek_series(show_name: str) -> bool:
-    lowered = _normalize_name(show_name)
-    return lowered.startswith("star trek")
-
-
 def _classify_film_era(
     year: int | None,
 ) -> Literal["tos", "tng", "kelvin", "other"] | None:
@@ -84,66 +81,29 @@ async def _fetch_show_by_query(client: httpx.AsyncClient, query: str) -> dict | 
     return response.json()
 
 
-async def _fetch_category_members(
-    client: httpx.AsyncClient,
-    category_title: str,
-) -> list[dict]:
-    members: list[dict] = []
-    continue_token: str | None = None
-
-    while True:
-        params = {
-            "action": "query",
-            "list": "categorymembers",
-            "cmtitle": category_title,
-            "cmlimit": "max",
-            "format": "json",
-        }
-        if continue_token is not None:
-            params["cmcontinue"] = continue_token
-
-        response = await client.get(WIKIPEDIA_CATEGORY_URL, params=params)
-        response.raise_for_status()
-        payload = response.json()
-        members.extend(payload.get("query", {}).get("categorymembers", []))
-
-        continue_token = payload.get("continue", {}).get("cmcontinue")
-        if continue_token is None:
-            break
-
-    return members
-
-
 async def fetch_star_trek_episodes(
     client: httpx.AsyncClient,
 ) -> list[CatalogItem]:
     canonical_tasks = [
         _fetch_show_by_query(client, query) for query in CANONICAL_SERIES_QUERIES
     ]
-    canonical_results = await asyncio.gather(*canonical_tasks)
-
-    search_response = await client.get(TVMAZE_SEARCH_URL)
-    search_response.raise_for_status()
-    search_results = search_response.json()
-
-    collected: list[dict] = [show for show in canonical_results if show is not None]
-    collected.extend(result.get("show", {}) for result in search_results)
+    fan_tasks = [_fetch_show_by_query(client, query) for query in FAN_SERIES_QUERIES]
+    canonical_results, fan_results = await asyncio.gather(
+        asyncio.gather(*canonical_tasks), asyncio.gather(*fan_tasks)
+    )
 
     shows: list[dict] = []
+    canon_by_show_id: dict[int, bool] = {}
     seen_show_ids: set[int] = set()
-    for show in collected:
-        name = show.get("name")
+    for show, is_canon in [
+        *((show, True) for show in canonical_results if show is not None),
+        *((show, False) for show in fan_results if show is not None),
+    ]:
         show_id = show.get("id")
-        show_type = (show.get("type") or "").lower()
-        if not name or not show_id or not _looks_like_main_star_trek_series(name):
+        if not show.get("name") or not show_id or show_id in seen_show_ids:
             continue
-        if show_type and show_type not in {"scripted", "animation"}:
-            continue
-
-        if show_id in seen_show_ids:
-            continue
-
         seen_show_ids.add(show_id)
+        canon_by_show_id[show_id] = is_canon
         shows.append(show)
 
     tasks = [
@@ -156,6 +116,7 @@ async def fetch_star_trek_episodes(
         episodes_response.raise_for_status()
         episodes = episodes_response.json()
         series_name = _canonicalize_series_name(show.get("name", "Star Trek"))
+        is_canon = canon_by_show_id[show["id"]]
 
         for episode in episodes:
             season = episode.get("season")
@@ -163,11 +124,13 @@ async def fetch_star_trek_episodes(
             episode_title = episode.get("name") or "Untitled Episode"
             premiered = episode.get("airdate")
             year = None
+            air_date = None
             if premiered:
                 try:
-                    year = datetime.fromisoformat(premiered).year
+                    air_date = datetime.fromisoformat(premiered).date()
+                    year = air_date.year
                 except ValueError:
-                    year = None
+                    pass
 
             image = episode.get("image") or {}
 
@@ -179,6 +142,8 @@ async def fetch_star_trek_episodes(
                     season=season,
                     episode_number=episode_number,
                     year=year,
+                    air_date=air_date,
+                    canon=is_canon,
                     banner_url=image.get("original") or image.get("medium"),
                     prime_video_url=_make_streaming_link(
                         series_name=series_name,
@@ -192,93 +157,77 @@ async def fetch_star_trek_episodes(
 
 
 async def fetch_star_trek_films(client: httpx.AsyncClient) -> list[CatalogItem]:
-    root_members = await _fetch_category_members(client, WIKIPEDIA_FILM_ROOT_CATEGORY)
-    root_titles = [
-        entry.get("title")
-        for entry in root_members
-        if entry.get("title")
-        and entry.get("ns") == 0
-        and not entry.get("title", "").startswith("List of")
-    ]
+    if not settings.tmdb_api_token.strip():
+        logger.warning("TMDB_API_TOKEN is missing; skipping film catalog fetch")
+        return []
 
-    film_subcategories = [
-        entry.get("title")
-        for entry in root_members
-        if entry.get("title")
-        and entry.get("ns") == 14
-        and "films based on star trek" in _normalize_name(entry.get("title", ""))
-    ]
-    subcategory_titles_only = [
-        title for title in film_subcategories if isinstance(title, str)
-    ]
+    headers = {"Authorization": f"Bearer {settings.tmdb_api_token.strip()}"}
+    params = {"language": settings.tmdb_language}
 
-    subcategory_results = await asyncio.gather(
-        *[_fetch_category_members(client, title) for title in subcategory_titles_only]
+    async def fetch_collection(collection_id: int) -> list[dict]:
+        response = await client.get(
+            f"{TMDB_API_BASE}/collection/{collection_id}",
+            headers=headers,
+            params=params,
+        )
+        response.raise_for_status()
+        return response.json().get("parts", [])
+
+    async def fetch_extra(query: str) -> dict | None:
+        response = await client.get(
+            f"{TMDB_API_BASE}/search/movie",
+            headers=headers,
+            params={**params, "query": query, "include_adult": "false"},
+        )
+        response.raise_for_status()
+        results = response.json().get("results", [])
+        normalized_query = _normalize_name(query)
+        return next(
+            (
+                movie
+                for movie in results
+                if _normalize_name(movie.get("title", "")) == normalized_query
+            ),
+            None,
+        )
+
+    collection_results, extra_results = await asyncio.gather(
+        asyncio.gather(
+            *(fetch_collection(collection_id) for collection_id in TMDB_FILM_COLLECTION_IDS)
+        ),
+        asyncio.gather(*(fetch_extra(query) for query in TMDB_EXTRA_FILM_QUERIES)),
     )
-    subcategory_titles = [
-        entry.get("title")
-        for members in subcategory_results
-        for entry in members
-        if entry.get("title")
-        and entry.get("ns") == 0
-        and not entry.get("title", "").startswith("List of")
-    ]
+    movies = [movie for collection in collection_results for movie in collection]
+    movies.extend(movie for movie in extra_results if movie is not None)
 
-    titles = [title for title in [*root_titles, *subcategory_titles] if title]
-    summary_tasks = [
-        client.get(WIKIPEDIA_SUMMARY_URL.format(title=quote(title, safe="")))
-        for title in titles
-    ]
-    summary_responses = await asyncio.gather(*summary_tasks)
-
-    seen_titles: set[str] = set()
+    seen_ids: set[int] = set()
     items: list[CatalogItem] = []
-
-    for summary_response in summary_responses:
-        if summary_response.status_code != 200:
-            continue
-
-        movie = summary_response.json()
+    for movie in movies:
+        movie_id = movie.get("id")
         title = movie.get("title")
-        if not title:
+        if not movie_id or not title or movie_id in seen_ids:
             continue
-        normalized_title = _normalize_name(title)
-        if not normalized_title.startswith("star trek"):
-            continue
-        if normalized_title in EXCLUDED_FILM_TITLES:
-            continue
-        if normalized_title.startswith("development of"):
-            continue
-        if " debate" in normalized_title:
-            continue
-        if normalized_title in seen_titles:
-            continue
+        seen_ids.add(movie_id)
 
-        description = (movie.get("description") or "").lower()
-        if "film" not in description:
-            continue
-        if any(
-            keyword in description for keyword in {"unproduced", "fan film", "proposed"}
-        ):
-            continue
-
-        seen_titles.add(normalized_title)
-
-        year_match = re.search(r"(19|20)\d{2}", description)
+        release_date = movie.get("release_date")
+        air_date = None
         year = None
-        if year_match:
-            year = int(year_match.group(0))
+        if release_date:
+            try:
+                air_date = date.fromisoformat(release_date)
+                year = air_date.year
+            except ValueError:
+                pass
 
-        original_image = movie.get("originalimage") or {}
-        thumbnail = movie.get("thumbnail") or {}
-        banner = original_image.get("source") or thumbnail.get("source")
-
+        image_path = movie.get("backdrop_path") or movie.get("poster_path")
+        banner = f"{TMDB_IMAGE_BASE}{image_path}" if image_path else None
         items.append(
             CatalogItem(
                 kind="film",
                 title=title,
                 series="Star Trek Films",
                 year=year,
+                air_date=air_date,
                 film_era=_classify_film_era(year),
                 banner_url=banner,
                 prime_video_url=_make_streaming_link(

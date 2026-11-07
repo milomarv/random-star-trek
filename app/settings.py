@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 3600
     user_agent: str = "random-star-trek-app/1.0"
     persist_filters: bool = False
+    tmdb_api_token: str = ""
+    tmdb_language: str = "en-US"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

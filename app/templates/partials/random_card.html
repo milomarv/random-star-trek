@@ -3,6 +3,8 @@
     data-item-kind="{{ item.kind }}"
     data-item-series="{{ item.series }}"
     data-item-film-era="{{ item.film_era or '' }}"
+    data-item-canon="{{ item.canon | lower }}"
+    data-item-air-date="{{ item.air_date or '' }}"
 >
     {% if item.banner_url %}
     <img

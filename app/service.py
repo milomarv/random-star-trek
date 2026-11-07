@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import logging
 import random
 import time
 from collections import Counter
+from datetime import date
 
 import httpx
 
 from app.clients import fetch_star_trek_episodes, fetch_star_trek_films
 from app.models import CatalogItem
 from app.settings import settings
+
+logger = logging.getLogger(__name__)
+
+REFRESH_RETRY_SECONDS = 60
 
 
 class CatalogService:
@@ -21,24 +27,47 @@ class CatalogService:
         if not force_refresh and self._cache and now < self._cache_expires_at:
             return self._cache
 
+        previous_films = [item for item in self._cache if item.kind == "film"]
         timeout = httpx.Timeout(settings.request_timeout_seconds)
         headers = {"User-Agent": settings.user_agent}
         async with httpx.AsyncClient(
             timeout=timeout, headers=headers, follow_redirects=True
         ) as client:
-            episodes, films = (
-                await fetch_star_trek_episodes(client),
-                await fetch_star_trek_films(client),
-            )
+            try:
+                episodes: list[CatalogItem] | None = await fetch_star_trek_episodes(
+                    client
+                )
+            except Exception:
+                logger.exception("Failed to fetch Star Trek episodes")
+                episodes = None
+            try:
+                films = await fetch_star_trek_films(client)
+            except Exception:
+                logger.exception("Failed to fetch Star Trek films")
+                films = previous_films
+
+        if episodes is None:
+            return self._serve_stale_cache(now)
 
         combined = [*episodes, *films]
         if not combined:
-            raise RuntimeError(
-                "No Star Trek episodes or films were returned from upstream APIs."
-            )
+            return self._serve_stale_cache(now)
 
         self._cache = combined
         self._cache_expires_at = now + settings.cache_ttl_seconds
+        return self._cache
+
+    def _serve_stale_cache(self, now: float) -> list[CatalogItem]:
+        if not self._cache:
+            raise RuntimeError(
+                "No Star Trek episodes or films were returned from upstream APIs."
+            )
+        logger.warning(
+            "Catalog refresh failed; serving %d cached items and retrying in %ds",
+            len(self._cache),
+            REFRESH_RETRY_SECONDS,
+        )
+        self._cache_expires_at = now + REFRESH_RETRY_SECONDS
         return self._cache
 
     @staticmethod
@@ -79,7 +108,10 @@ class CatalogService:
         included_kinds: set[str],
         excluded_series: set[str],
         excluded_film_eras: set[str],
+        include_unaired: bool,
+        exclude_non_canon: bool,
     ) -> list[CatalogItem]:
+        today = date.today()
         return [
             item
             for item in catalog
@@ -90,6 +122,12 @@ class CatalogService:
                 and item.film_era is not None
                 and item.film_era in excluded_film_eras
             )
+            and (item.canon or not exclude_non_canon)
+            and (
+                include_unaired
+                or (item.kind == "film" and item.air_date is None)
+                or (item.air_date is not None and item.air_date <= today)
+            )
         ]
 
     async def get_series_options(self) -> list[str]:
@@ -98,16 +136,25 @@ class CatalogService:
 
     async def get_filter_stats(self) -> dict[str, object]:
         catalog = await self.get_catalog()
+        today = date.today()
         kind_counts = Counter(item.kind for item in catalog)
         series_counts = Counter(item.series for item in catalog)
         film_era_counts = Counter(
             item.film_era or "unknown" for item in catalog if item.kind == "film"
+        )
+        non_canon_count = sum(1 for item in catalog if not item.canon)
+        unaired_count = sum(
+            1
+            for item in catalog
+            if item.air_date is not None and item.air_date > today
         )
 
         return {
             "total": len(catalog),
             "episodes": kind_counts.get("episode", 0),
             "films": kind_counts.get("film", 0),
+            "non_canon": non_canon_count,
+            "unaired": unaired_count,
             "series_counts": dict(series_counts),
             "film_era_counts": {
                 "tos": film_era_counts.get("tos", 0),
@@ -124,6 +171,8 @@ class CatalogService:
         include_kinds: list[str] | None = None,
         exclude_series: list[str] | None = None,
         exclude_film_eras: list[str] | None = None,
+        include_unaired: bool = False,
+        exclude_non_canon: bool = False,
     ) -> dict[str, int]:
         catalog = await self.get_catalog()
         normalized_included_kinds = self._normalize_kind_includes(include_kinds)
@@ -136,6 +185,8 @@ class CatalogService:
             included_kinds=normalized_included_kinds,
             excluded_series=normalized_excluded_series,
             excluded_film_eras=normalized_excluded_eras,
+            include_unaired=include_unaired,
+            exclude_non_canon=exclude_non_canon,
         )
 
         total_available = len(catalog)
@@ -160,6 +211,8 @@ class CatalogService:
         include_kinds: list[str] | None = None,
         exclude_series: list[str] | None = None,
         exclude_film_eras: list[str] | None = None,
+        include_unaired: bool = False,
+        exclude_non_canon: bool = False,
     ) -> tuple[CatalogItem, int]:
         catalog = await self.get_catalog()
         normalized_included_kinds = self._normalize_kind_includes(include_kinds)
@@ -172,6 +225,8 @@ class CatalogService:
             included_kinds=normalized_included_kinds,
             excluded_series=normalized_excluded_series,
             excluded_film_eras=normalized_excluded_eras,
+            include_unaired=include_unaired,
+            exclude_non_canon=exclude_non_canon,
         )
         if not filtered:
             raise ValueError("No matches for the selected filters.")
@@ -183,6 +238,8 @@ class CatalogService:
         include_kinds: list[str] | None = None,
         exclude_series: list[str] | None = None,
         exclude_film_eras: list[str] | None = None,
+        include_unaired: bool = False,
+        exclude_non_canon: bool = False,
     ) -> dict[str, object]:
         catalog = await self.get_catalog()
         normalized_included_kinds = self._normalize_kind_includes(include_kinds)
@@ -195,6 +252,8 @@ class CatalogService:
             included_kinds=normalized_included_kinds,
             excluded_series=normalized_excluded_series,
             excluded_film_eras=normalized_excluded_eras,
+            include_unaired=include_unaired,
+            exclude_non_canon=exclude_non_canon,
         )
 
         by_year = Counter(item.year for item in filtered if item.year is not None)
@@ -226,6 +285,8 @@ class CatalogService:
         include_kinds: list[str] | None = None,
         exclude_series: list[str] | None = None,
         exclude_film_eras: list[str] | None = None,
+        include_unaired: bool = False,
+        exclude_non_canon: bool = False,
         limit: int = 100,
     ) -> tuple[list[CatalogItem], int]:
         catalog = await self.get_catalog()
@@ -239,6 +300,8 @@ class CatalogService:
             included_kinds=normalized_included_kinds,
             excluded_series=normalized_excluded_series,
             excluded_film_eras=normalized_excluded_eras,
+            include_unaired=include_unaired,
+            exclude_non_canon=exclude_non_canon,
         )
 
         def chronology_key(item: CatalogItem) -> tuple[int, int, int, str, str]:
