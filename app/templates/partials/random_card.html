@@ -45,17 +45,16 @@
             >
                 Load Another Random Pick
             </button>
+            <a
+                href="{{ item.prime_video_url }}"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-app-link="streaming"
+                data-stream-url="{{ item.prime_video_url }}"
+                class="cta {{ 'cta-red' if 'youtube.com' in item.prime_video_url else 'cta-blue' }} prime-link"
+            >
+                {{ "Search on YouTube" if "youtube.com" in item.prime_video_url else "Open on Prime Video Search" }}
+            </a>
         </div>
-
-        <a
-            href="{{ item.prime_video_url }}"
-            target="_blank"
-            rel="noopener noreferrer"
-            data-app-link="streaming"
-            data-stream-url="{{ item.prime_video_url }}"
-            class="cta {{ 'cta-red' if 'youtube.com' in item.prime_video_url else 'cta-blue' }} prime-link"
-        >
-            {{ "Search on YouTube" if "youtube.com" in item.prime_video_url else "Open on Prime Video Search" }}
-        </a>
     </div>
 </article>
